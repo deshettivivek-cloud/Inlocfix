@@ -68,9 +68,9 @@ export default function CustomerDashboard() {
         if (error) { setBookings([]); return }
         const enriched = await Promise.all(
           (data || []).map(async (b) => {
-            if (!b.worker_id) return { ...b, other_name: 'Unknown' }
+            if (!b.worker_id) return { ...b, other_name: null, other_phone: '' }
             const { data: prof } = await supabase.from('profiles').select('full_name, phone').eq('id', b.worker_id).maybeSingle()
-            return { ...b, other_name: prof?.full_name || 'Unknown', other_phone: prof?.phone || '' }
+            return { ...b, other_name: prof?.full_name || 'Assigned', other_phone: prof?.phone || '' }
           })
         )
         setBookings(enriched)
@@ -121,6 +121,7 @@ export default function CustomerDashboard() {
     if (s === 'verified') return 'bg-emerald-500/20 text-emerald-400'
     if (s === 'confirmed') return 'bg-green-500/20 text-green-400'
     if (s === 'cancelled') return 'bg-red-500/20 text-red-400'
+    if (s === 'searching') return 'bg-blue-500/20 text-blue-400 animate-pulse'
     return 'bg-yellow-500/20 text-yellow-400'
   }
 
@@ -229,7 +230,7 @@ export default function CustomerDashboard() {
                   { icon: '❄️', label: 'AC Repair' }, { icon: '🪚', label: 'Carpenter' },
                   { icon: '🎨', label: 'Painter' }, { icon: '📱', label: 'Technician' },
                 ].map(({ icon, label }) => (
-                  <Link key={label} to={`/search?service=${label.toLowerCase()}`}
+                  <Link key={label} to="/search"
                     className="flex items-center gap-2.5 px-3.5 py-2.5 bg-white/5 hover:bg-blue-500/10 border border-white/5 hover:border-blue-500/20 rounded-xl transition-all text-sm">
                     <span className="text-base">{icon}</span>
                     <span className="text-slate-300 font-medium">{label}</span>
@@ -258,16 +259,31 @@ export default function CustomerDashboard() {
                 </Link>
               </div>
             ) : bookings.map((b) => (
-              <div key={b.id} className="bg-slate-800/60 border border-white/5 rounded-2xl p-5 hover:border-white/10 transition">
+              <div key={b.id} className={`bg-slate-800/60 border rounded-2xl p-5 transition mb-3 ${b.status === 'searching' ? 'border-blue-500/20' : 'border-white/5 hover:border-white/10'}`}>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-cyan-600 flex items-center justify-center text-white font-bold text-sm shrink-0 mt-0.5">
-                      {b.other_name?.charAt(0)?.toUpperCase() || '?'}
-                    </div>
+                    {b.status === 'searching' ? (
+                      <div className="w-10 h-10 rounded-full bg-blue-500/15 border border-blue-500/25 flex items-center justify-center shrink-0 mt-0.5">
+                        <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-cyan-600 flex items-center justify-center text-white font-bold text-sm shrink-0 mt-0.5">
+                        {b.other_name?.charAt(0)?.toUpperCase() || '?'}
+                      </div>
+                    )}
                     <div className="min-w-0">
-                      <p className="text-white font-semibold text-sm truncate">{b.other_name}</p>
-                      <p className="text-blue-400 text-xs capitalize mt-0.5">{b.service_type || 'Service'}</p>
-                      {b.other_phone && <p className="text-slate-500 text-xs mt-0.5 flex items-center gap-1"><Phone size={10} /> {b.other_phone}</p>}
+                      {b.status === 'searching' ? (
+                        <>
+                          <p className="text-blue-400 font-semibold text-sm">Searching for workers...</p>
+                          <p className="text-slate-500 text-xs mt-0.5">Waiting for a professional to accept</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-white font-semibold text-sm truncate">{b.other_name || 'Worker'}</p>
+                          <p className="text-blue-400 text-xs capitalize mt-0.5">{b.service_type || 'Service'}</p>
+                          {b.other_phone && <p className="text-slate-500 text-xs mt-0.5 flex items-center gap-1"><Phone size={10} /> {b.other_phone}</p>}
+                        </>
+                      )}
                     </div>
                   </div>
                   <span className={`text-[10px] px-2.5 py-1 rounded-full font-medium capitalize shrink-0 ${statusColor(b.status)}`}>{b.status || 'pending'}</span>
@@ -277,6 +293,11 @@ export default function CustomerDashboard() {
                   <span className="text-slate-400 text-xs flex items-center gap-1.5"><Clock size={12} /> {b.time_slot || 'No time'}</span>
                 </div>
                 {b.note && <p className="mt-2 text-slate-500 text-xs italic">"{b.note}"</p>}
+                {b.status === 'searching' && (
+                  <div className="mt-3 w-full py-2.5 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 animate-pulse">
+                    <Loader2 size={13} className="animate-spin" /> Looking for nearby workers...
+                  </div>
+                )}
                 {b.status === 'confirmed' && (
                   <button type="button" onClick={() => openVerifyModal(b.id)}
                     className="mt-3 w-full py-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1.5">

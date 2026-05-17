@@ -2,7 +2,6 @@ const express = require('express')
 const cors = require('cors')
 require('dotenv').config()
 
-const connectMongo = require('./db/mongo')
 const errorHandler = require('./middleware/errorHandler')
 const authRoutes = require('./routes/auth')
 const workerRoutes = require('./routes/workers')
@@ -27,10 +26,8 @@ app.use('/api/otp', otpRoutes)
 
 app.use(errorHandler)
 
-// Connect to MongoDB, then start the server
+// Start the server (Supabase only — no MongoDB needed)
 const PORT = process.env.PORT || 3001
-connectMongo().then(() => {
-  app.listen(PORT, () => {
-    console.log(`✅ Server running on http://localhost:${PORT}`)
-  })
+app.listen(PORT, () => {
+  console.log(`✅ Server running on http://localhost:${PORT}`)
 })

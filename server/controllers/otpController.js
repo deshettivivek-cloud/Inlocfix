@@ -1,4 +1,3 @@
-const Otp = require('../models/Otp')
 const supabase = require('../db/supabase')
 const jwt = require('jsonwebtoken')
 const axios = require('axios')
@@ -88,13 +87,23 @@ const sendOtp = async (req, res, next) => {
     }
 
     // Delete any existing OTPs for this phone
-    await Otp.deleteMany({ phone })
+    await supabase.from('otps').delete().eq('phone', phone)
 
     // Generate and store new OTP
     const otp = generateOtp()
-    const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000)
+    const expires_at = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000).toISOString()
 
-    await Otp.create({ phone, otp, expiresAt })
+    const { error: insertErr } = await supabase.from('otps').insert({
+      phone,
+      otp,
+      expires_at,
+      purpose: 'login',
+    })
+
+    if (insertErr) {
+      console.error('❌ Failed to store OTP:', insertErr.message)
+      return res.status(500).json({ success: false, message: 'Failed to generate OTP' })
+    }
 
     // Send SMS via Fast2SMS (with dev-mode fallback)
     try {
@@ -135,14 +144,16 @@ const verifyOtp = async (req, res, next) => {
       phone = '+91' + phone
     }
 
-    // Find the OTP record
-    const otpRecord = await Otp.findOne({
-      phone,
-      otp,
-      expiresAt: { $gt: new Date() },
-    })
+    // Find the OTP record (not expired)
+    const { data: otpRecord, error: otpErr } = await supabase
+      .from('otps')
+      .select('*')
+      .eq('phone', phone)
+      .eq('otp', otp)
+      .gt('expires_at', new Date().toISOString())
+      .maybeSingle()
 
-    if (!otpRecord) {
+    if (otpErr || !otpRecord) {
       return res.status(401).json({
         success: false,
         message: 'Invalid or expired OTP. Please try again.',
@@ -150,7 +161,7 @@ const verifyOtp = async (req, res, next) => {
     }
 
     // OTP is valid — delete it so it can't be reused
-    await Otp.deleteMany({ phone })
+    await supabase.from('otps').delete().eq('phone', phone)
 
     // Find the user in Supabase profiles by phone
     const phoneClean = phone.replace('+91', '')
@@ -249,19 +260,24 @@ const sendWorkerVerificationOtp = async (req, res, next) => {
     }
 
     // Delete any existing worker-verification OTPs for this booking
-    await Otp.deleteMany({ bookingId })
+    await supabase.from('otps').delete().eq('booking_id', bookingId)
 
     // Generate and store OTP with booking reference
     const otp = generateOtp()
-    const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000)
+    const expires_at = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000).toISOString()
 
-    await Otp.create({
+    const { error: insertErr } = await supabase.from('otps').insert({
       phone: workerPhone,
       otp,
-      expiresAt,
-      bookingId,
+      expires_at,
+      booking_id: bookingId,
       purpose: 'worker_verification',
     })
+
+    if (insertErr) {
+      console.error('❌ Failed to store OTP:', insertErr.message)
+      return res.status(500).json({ success: false, message: 'Failed to generate verification OTP' })
+    }
 
     // Send SMS to the worker
     try {
@@ -297,14 +313,16 @@ const verifyWorkerOtp = async (req, res, next) => {
     }
 
     // Find the OTP record by bookingId + otp
-    const otpRecord = await Otp.findOne({
-      bookingId,
-      otp,
-      purpose: 'worker_verification',
-      expiresAt: { $gt: new Date() },
-    })
+    const { data: otpRecord, error: otpErr } = await supabase
+      .from('otps')
+      .select('*')
+      .eq('booking_id', bookingId)
+      .eq('otp', otp)
+      .eq('purpose', 'worker_verification')
+      .gt('expires_at', new Date().toISOString())
+      .maybeSingle()
 
-    if (!otpRecord) {
+    if (otpErr || !otpRecord) {
       return res.status(401).json({
         success: false,
         message: 'Invalid or expired OTP. Please try again.',
@@ -312,7 +330,7 @@ const verifyWorkerOtp = async (req, res, next) => {
     }
 
     // OTP is valid — delete it
-    await Otp.deleteMany({ bookingId, purpose: 'worker_verification' })
+    await supabase.from('otps').delete().eq('booking_id', bookingId).eq('purpose', 'worker_verification')
 
     // Update booking status to 'verified'
     const { data: updated, error: updateErr } = await supabase
